@@ -2,7 +2,7 @@
  * DMlog.ai custom configuration loader.
  * Loads personality, rules, theme, and templates from KV.
  */
-import type { Env } from '../../src/types.js';
+import type { Env } from '../../src/types';
 
 export interface DMLogConfig {
   personality: string;
