@@ -1,10 +1,10 @@
 import { html, useState } from '../preact-shim.js';
 import { MessageContent } from './message-content.js';
-import { authState, addToast } from '../app.js';
+import { authState, addToast, getToken } from '../app.js';
 
 function sendFeedback(interactionId, sentiment) {
   if (!interactionId) return;
-  const token = sessionStorage.getItem('lo-token') || authState.value.token;
+  const token = getToken();
   fetch(`/v1/chat/interactions/${interactionId}/feedback`, {
     method: 'PATCH',
     headers: {
@@ -26,9 +26,9 @@ export function Message({ message }) {
     if (content === 'GUEST_LIMIT') {
       return html`
         <div class="message system guest-limit-prompt">
-          <div class="guest-limit-icon">🔐</div>
-          <div class="guest-limit-text">Free messages used up!</div>
-          <div class="guest-limit-hint">Create a free account to keep chatting. Your messages are saved.</div>
+          <div class="guest-limit-icon">🏰</div>
+          <div class="guest-limit-text">Your free messages are up!</div>
+          <div class="guest-limit-hint">Create a free account to continue your adventure. Your guest messages are saved.</div>
           <button class="primary" style="margin-top:.5rem;padding:.4rem 1rem" onclick=${() => { authState.value = { isLoggedIn: false, token: null }; }}>Create Free Account</button>
         </div>
       `;

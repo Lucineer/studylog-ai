@@ -2,12 +2,35 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LOG</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>DMlog.ai — Your AI Dungeon Master Remembers Everything</title>
+  <meta name="description" content="AI-powered D&D dungeon master with persistent memory. Your DM remembers every NPC, plot thread, and epic moment. Free, open source, encrypted.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏰</text></svg>">
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.deepseek.com https://api.openai.com; img-src 'self' data:;">
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module" src="/app.js"></script>
+  <div id="app">
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--t2, #8b949e);font-family:system-ui">
+      Loading...
+    </div>
+  </div>
+  <script type="module">
+    window.onerror = (msg, src, line, col, err) => {
+      const el = document.getElementById('app');
+      if (el) el.innerHTML = '<div style="padding:2rem;color:#f85149;font-family:monospace;white-space:pre-wrap"><div style="font-size:1.2rem;margin-bottom:1rem">⚠️ Error</div><div>' + msg + '</div>' + (src ? '<div style="color:#8b949e;margin-top:.5rem">' + src + ':' + line + ':' + col + '</div>' : '') + '</div>';
+    };
+    try {
+      const { render } = await import('./preact-shim.js');
+      const { App } = await import('./app.js');
+      render(App(), document.getElementById('app'));
+    } catch (e) {
+      document.getElementById('app').innerHTML = '<div style="padding:2rem;color:#f85149;font-family:monospace;white-space:pre-wrap"><div style="font-size:1.2rem;margin-bottom:1rem">⚠️ Load Error</div><div>' + e.message + '</div><div style="color:#8b949e;margin-top:1rem">Check browser console (F12) for details.</div></div>';
+      console.error('Module load error:', e);
+    }
+  </script>
 </body>
 </html>

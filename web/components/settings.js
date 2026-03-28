@@ -1,10 +1,10 @@
 import { html, useState, useEffect } from '../preact-shim.js';
-import { settingsOpen, theme, addToast } from '../app.js';
+import { settingsOpen, theme, addToast, getToken } from '../app.js';
 
 // Save preferences to backend
 async function savePrefs(obj) {
   try {
-    const token = localStorage.getItem('auth_token');
+    const token = getToken();
     if (!token) return;
     await fetch('/v1/preferences', {
       method: 'PUT',
@@ -17,7 +17,7 @@ async function savePrefs(obj) {
 // Load preferences from backend
 async function loadPrefs(setPrivacy, setStream) {
   try {
-    const token = localStorage.getItem('auth_token');
+    const token = getToken();
     if (!token) return;
     const res = await fetch('/v1/preferences', {
       headers: { 'Authorization': `Bearer ${token}` },

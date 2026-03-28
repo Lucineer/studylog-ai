@@ -1,5 +1,5 @@
 import { html, useState, useEffect } from '../preact-shim.js';
-import { sidebarOpen, sessionUpdated, loadSessionSignal, addToast } from '../app.js';
+import { sidebarOpen, sessionUpdated, loadSessionSignal, addToast, getToken } from '../app.js';
 
 export function Sidebar() {
   const [sessionList, setSessionList] = useState([]);
@@ -7,8 +7,16 @@ export function Sidebar() {
   const [recap, setRecap] = useState(null);
   const [recapId, setRecapId] = useState(null);
   const [activeId, setActiveId] = useState(null);
+  const [search, setSearch] = useState('');
 
-  const getToken = () => sessionStorage.getItem('lo-token');
+
+  const filtered = search.trim()
+    ? sessionList.filter(s =>
+        (s.summary || '').toLowerCase().includes(search.toLowerCase()) ||
+        (s.last_message || '').toLowerCase().includes(search.toLowerCase()) ||
+        (s.first_message || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : sessionList;
 
   const fetchSessions = async () => {
     const token = getToken();
@@ -67,6 +75,30 @@ export function Sidebar() {
     }
   };
 
+  const handleExport = async (id, e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/v1/sessions/${id}/export?format=md`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="(.+)"/);
+      a.download = match ? match[1] : `session-${id.slice(0, 8)}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      addToast('Session exported');
+    } catch (err) {
+      addToast('Export failed: ' + err.message, 'error');
+    }
+  };
+
   const formatTime = (ts) => {
     if (!ts) return '';
     const diffMins = Math.floor((Date.now() - new Date(ts)) / 60000);
@@ -84,19 +116,25 @@ export function Sidebar() {
   return html`
     <div class="sidebar ${sidebarOpen.value ? '' : 'collapsed'}">
       <div class="sidebar-header">
-        <h2>📋 History</h2>
+        <h2>📜 Campaign Log</h2>
         <button class="icon-btn" onclick=${() => sidebarOpen.value = false} title="Close sidebar">✕</button>
+      </div>
+      <div class="sidebar-search">
+        <input type="text" placeholder="🔍 Search campaigns..." value=${search}
+          oninput=${(e) => setSearch(e.target.value)} />
       </div>
       <div class="session-list">
         ${loading ? html`
           <div class="session-loading"><span class="spinner"></span> Loading...</div>
-        ` : sessionList.length === 0 ? html`
+        ` : filtered.length === 0 && sessionList.length > 0 ? html`
+          <div class="session-empty"><div>No matches for "${search}"</div></div>
+        ` : filtered.length === 0 ? html`
           <div class="session-empty">
             <div class="session-empty-icon">📖</div>
             <div>No campaigns yet</div>
             <div class="session-empty-hint">Start chatting to begin your adventure</div>
           </div>
-        ` : sessionList.map(s => html`
+        ` : filtered.map(s => html`
           <div class="session-item ${activeId === s.id ? 'active' : ''}"
                onclick=${() => { setActiveId(s.id); loadSessionSignal.value = s.id; if (window.innerWidth < 768) sidebarOpen.value = false; }}>
             <div class="session-title">${truncate(s.summary || s.last_message || s.first_message)}</div>
@@ -107,6 +145,7 @@ export function Sidebar() {
             ${recapId === s.id && recap ? html`<div class="session-recap">${recap}</div>` : null}
             <div class="session-actions">
               <button class="action-btn" onclick=${(e) => handleRecap(s.id, e)} title="Recap">📝</button>
+              <button class="action-btn" onclick=${(e) => handleExport(s.id, e)} title="Export">📥</button>
               <button class="action-btn delete" onclick=${(e) => handleDelete(s.id, e)} title="Delete">🗑</button>
             </div>
           </div>
@@ -114,7 +153,7 @@ export function Sidebar() {
         }
       </div>
       <div class="sidebar-footer">
-        <button class="primary sidebar-new-btn" onclick=${handleNewSession}>+ New Chat</button>
+        <button class="primary sidebar-new-btn" onclick=${handleNewSession}>⚔️ New Adventure</button>
       </div>
     </div>
   `;

@@ -123,4 +123,47 @@ sessions.get('/:id/recap', async (c) => {
   }
 });
 
+// GET /:id/export?format=md|json — download session as markdown or JSON
+sessions.get('/:id/export', async (c) => {
+  const userId = c.get('userId');
+  const sessionId = c.req.param('id');
+  const format = c.req.query('format') || 'md';
+
+  const session = await c.env.DB.prepare(
+    'SELECT id, summary, message_count, created_at, last_message_at FROM sessions WHERE id = ? AND user_id = ?',
+  ).bind(sessionId, userId).first<{
+    id: string; summary: string; message_count: number; created_at: string; last_message_at: string;
+  }>();
+
+  if (!session) return c.json({ error: { message: 'Session not found' } }, 404);
+
+  const { results: messages } = await c.env.DB.prepare(
+    'SELECT role, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at ASC',
+  ).bind(sessionId).all<{ role: string; content: string; created_at: string }>();
+  const msgs = messages || [];
+
+  if (format === 'json') {
+    return new Response(JSON.stringify({ id: session.id, summary: session.summary, messages: msgs }, null, 2), {
+      headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="session-${sessionId.slice(0, 8)}.json"` },
+    });
+  }
+
+  // Markdown
+  const lines = [
+    `# ${session.summary || 'Untitled Session'}`, '',
+    `> Exported from DMlog.ai — ${new Date().toISOString()}`,
+    `> Messages: ${session.message_count} | Created: ${session.created_at}`, '',
+    '---', '',
+  ];
+  for (const m of msgs) {
+    const t = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+    if (m.role === 'user') { lines.push(`### 👤 You${t ? ` — ${t}` : ''}`, '', m.content, ''); }
+    else if (m.role === 'assistant') { lines.push(`### 🏰 DM${t ? ` — ${t}` : ''}`, '', m.content, ''); }
+    else { lines.push(`> *${m.content}*`, ''); }
+  }
+  return new Response(lines.join('\n'), {
+    headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="session-${sessionId.slice(0, 8)}.md"` },
+  });
+});
+
 export default sessions;

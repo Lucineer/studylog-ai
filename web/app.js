@@ -1,10 +1,12 @@
-import { render, signal, effect } from 'preact';
-import { html } from 'htm/preact';
+// Remove window.onerror (handled in index.html)
+import { render, signal, useEffect, html } from './preact-shim.js';
 import { Login } from './components/login.js';
 import { Chat } from './components/chat.js';
 import { Sidebar } from './components/sidebar.js';
 import { Settings } from './components/settings.js';
+import { NPCPanel } from './components/npc-panel.js';
 
+import { Analytics } from './components/analytics.js';
 // Global state
 export const authState = signal({ isLoggedIn: false, token: null, userId: null });
 export const theme = signal(localStorage.getItem('lo-theme') || 'dark');
@@ -12,15 +14,17 @@ export const sidebarOpen = signal(true);
 export const settingsOpen = signal(false);
 export const sessions = signal([]);
 export const currentSessionId = signal(null);
+export const sessionUpdated = signal(0);
+export const loadSessionSignal = signal(null);
 export const toasts = signal([]);
 export const overlay = signal(null);
+export const analyticsOpen = signal(false);
 
 // Theme sync
-effect(() => {
+useEffect(() => {
   document.documentElement.setAttribute('data-theme', theme.value);
   localStorage.setItem('lo-theme', theme.value);
-  // Load DMlog custom theme if available
-  if (document.body.classList.contains('dm-theme') || window.location.hostname.includes('dmlog')) {
+  if (window.location.hostname.includes('dmlog')) {
     const existing = document.getElementById('dm-theme-css');
     if (!existing) {
       const link = document.createElement('link');
@@ -31,7 +35,23 @@ effect(() => {
       document.body.classList.add('dm-theme');
     }
   }
-});
+}, []);
+
+// Central token getter: localStorage (persisted login) > sessionStorage (guest) > authState
+export function getToken() {
+  return localStorage.getItem('lo-token') || sessionStorage.getItem('lo-token') || authState.value.token || '';
+}
+
+// Auto-login from persisted token
+const savedToken = getToken();
+if (savedToken) {
+  authState.value = {
+    isLoggedIn: true,
+    token: savedToken,
+    userId: localStorage.getItem('lo-userid') || null,
+    isGuest: !!sessionStorage.getItem('lo-guest'),
+  };
+}
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -47,16 +67,19 @@ function addToast(msg, type = 'info') {
 }
 export { addToast };
 
-function App() {
+export default function App() {
   return html`
     <div class="app">
       ${authState.value.isLoggedIn ? html`
         <div class="layout">
           <${Sidebar} />
+          <div class="sidebar-backdrop" onclick=${() => sidebarOpen.value = false}></div>
           <${Chat} />
+          <${NPCPanel} />
         </div>
       ` : html`<${Login} />`}
       <${Settings} />
+      <${Analytics} />
       <div class="toast-container">
         ${toasts.value.map(t => html`<div class="toast">${t.msg}</div>`)}
       </div>
@@ -64,4 +87,4 @@ function App() {
   `;
 }
 
-render(html`<${App} />`, document.getElementById('app'));
+

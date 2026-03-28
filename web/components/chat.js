@@ -1,9 +1,10 @@
-import { html } from 'htm/preact';
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { html, useState, useRef, useEffect } from '../preact-shim.js';
 import { Message } from './message.js';
+import { MessageContent } from './message-content.js';
 import { DraftPanel } from './draft-panel.js';
-import { authState, theme, sidebarOpen, sessions, currentSessionId, addToast } from '../app.js';
-import { dehydrateClient, rehydrateClient } from '../crypto.js';
+import { DiceRoller, rollResults } from './dice-roller.js';
+import { CharacterStats } from './character-stats.js';
+import { authState, theme, sidebarOpen, currentSessionId, sessionUpdated, loadSessionSignal, settingsOpen, analyticsOpen, addToast, getToken } from '../app.js';
 
 export function Chat() {
   const [messages, setMessages] = useState([]);
@@ -12,15 +13,51 @@ export function Chat() {
   const [draftMode, setDraftMode] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [streamingContent, setStreamingContent] = useState('');
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(false);
+  const [showDice, setShowDice] = useState(false);
   const listRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Auto-scroll
+
+  // Watch for session load requests from sidebar
+  useEffect(() => {
+    const id = loadSessionSignal.value;
+    if (id && id !== activeSessionId) {
+      setActiveSessionId(id);
+      currentSessionId.value = id;
+      loadSession(id);
+    }
+  }, [loadSessionSignal.value]);
+
+  const loadSession = async (sessionId) => {
+    setLoadingSession(true);
+    setMessages([]);
+    try {
+      const res = await fetch(`/v1/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      if (data.messages && data.messages.length > 0) {
+        setMessages(data.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          interactionId: m.id,
+          ts: m.createdAt,
+        })));
+      }
+    } catch (err) {
+      addToast(`Failed to load session: ${err.message}`, 'error');
+    } finally {
+      setLoadingSession(false);
+    }
+  };
+
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, streamingContent]);
 
-  // Resize textarea
   const handleInput = (e) => {
     setInput(e.target.value);
     const ta = e.target;
@@ -28,63 +65,103 @@ export function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
   };
 
-  const getToken = () => sessionStorage.getItem('lo-token') || authState.value.token;
+  const ensureSession = async () => {
+    if (activeSessionId) return activeSessionId;
+    const token = getToken();
+    if (!token) return null;
+    try {
+      const res = await fetch('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ summary: '' }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const sid = data.id;
+      setActiveSessionId(sid);
+      currentSessionId.value = sid;
+      return sid;
+    } catch {
+      return null;
+    }
+  };
+
+  const streamResponse = async (endpoint, body) => {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      let errMsg = `HTTP ${res.status}`;
+      try { const errJson = JSON.parse(errText); errMsg = errJson.error?.message || errMsg; } catch {}
+      throw new Error(errMsg);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '', model = '', interactionId = '', routeAction = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) full += delta.content;
+          if (parsed.model) model = parsed.model;
+          if (parsed.id) interactionId = parsed.id.replace('chatcmpl-', '');
+          if (parsed._meta?.classification?.action) routeAction = parsed._meta.classification.action;
+          setStreamingContent(full);
+        } catch {}
+      }
+    }
+    return { content: full, model, interactionId, routeAction };
+  };
 
   const sendMessage = async (text) => {
     if (!text.trim() || isStreaming) return;
     const userMsg = { role: 'user', content: text, ts: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    if (textareaRef.current) { textareaRef.current.style.height = 'auto'; }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsStreaming(true);
     setStreamingContent('');
-
     try {
-      const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-        },
-        body: JSON.stringify({
-          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-          stream: true,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || `HTTP ${res.status}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let full = '';
-      let model = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
-            if (delta?.content) full += delta.content;
-            if (parsed.model) model = parsed.model;
-            setStreamingContent(full);
-          } catch {}
-        }
-      }
-
-      setMessages(prev => [...prev, { role: 'assistant', content: full, model, ts: Date.now() }]);
+      const sid = await ensureSession();
+      const chatMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const body = { messages: chatMessages, stream: true };
+      if (sid) body.session_id = sid;
+      // Inject character context from quickstart (send once, then clear)
+      try {
+        const charStr = sessionStorage.getItem('lo-character');
+        if (charStr) { body.character = JSON.parse(charStr); sessionStorage.removeItem('lo-character'); }
+      } catch {}
+      const result = await streamResponse('/v1/chat/completions', body);
+      sessionUpdated.value++;
+      setMessages(prev => [...prev, {
+        role: 'assistant', content: result.content, model: result.model,
+        interactionId: result.interactionId, routeAction: result.routeAction, ts: Date.now(),
+      }]);
     } catch (err) {
-      addToast(err.message, 'error');
-      setMessages(prev => [...prev, { role: 'system', content: `Error: ${err.message}`, ts: Date.now() }]);
+      const msg = err.message || '';
+      if (msg.includes('Guest limit') || msg.includes('guest_limit')) {
+        // Guest limit reached — prompt to sign up
+        setMessages(prev => [...prev, {
+          role: 'system', content: 'GUEST_LIMIT', ts: Date.now(),
+        }]);
+        authState.value = { isLoggedIn: false, token: null };
+      } else {
+        addToast(msg, 'error');
+        setMessages(prev => [...prev, { role: 'system', content: `Error: ${msg}`, ts: Date.now() }]);
+      }
     } finally {
       setIsStreaming(false);
       setStreamingContent('');
@@ -92,17 +169,30 @@ export function Chat() {
   };
 
   const handleKeyDown = (e) => {
-    if (e.ctrlKey && e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       sendMessage(input);
     }
   };
 
   const handleNewChat = () => {
-    currentSessionId.value = crypto.randomUUID();
+    setActiveSessionId(null);
+    currentSessionId.value = null;
     setMessages([]);
     setDrafts([]);
     setDraftMode(false);
+    setInput('');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('lo-token');
+    localStorage.removeItem('lo-userid');
+    sessionStorage.removeItem('lo-token');
+    sessionStorage.removeItem('lo-guest');
+    sessionStorage.removeItem('lo-character');
+    sessionStorage.removeItem('lo-session');
+    authState.value = { isLoggedIn: false, token: null, userId: null };
+    addToast('Signed out');
   };
 
   const sendDraft = async (text) => {
@@ -112,54 +202,44 @@ export function Chat() {
     const userMsg = { role: 'user', content: text, ts: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    setIsStreaming(true);
 
-    // For draft mode, we'd ideally query multiple providers.
-    // For now, send once and show as a single draft card.
+    const token = getToken();
     try {
-      const res = await fetch('/v1/chat/completions', {
+      const sid = await ensureSession();
+      const chatMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const res = await fetch('/v1/drafts/compare', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-        },
-        body: JSON.stringify({
-          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-          stream: true,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: chatMessages, session_id: sid, max_tokens: 500 }),
       });
-      if (!res.ok) throw new Error(await res.text());
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let full = '', model = '', startTime = Date.now();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.choices?.[0]?.delta?.content) full += parsed.choices[0].delta.content;
-            if (parsed.model) model = parsed.model;
-          } catch {}
-        }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        let errMsg = `HTTP ${res.status}`;
+        try { errMsg = JSON.parse(errText).error?.message || errMsg; } catch {}
+        throw new Error(errMsg);
       }
-      setDrafts([{ provider: model || 'default', content: full, latency: Date.now() - startTime }]);
+      const data = await res.json();
+      setDrafts(data.drafts || []);
     } catch (err) {
       addToast(err.message, 'error');
-    } finally {
-      setIsStreaming(false);
+      setDraftMode(false);
     }
   };
 
   const pickDraft = (idx) => {
     const draft = drafts[idx];
     if (!draft) return;
-    setMessages(prev => [...prev, { role: 'assistant', content: draft.content, model: draft.provider, ts: Date.now() }]);
+    setMessages(prev => [...prev, {
+      role: 'assistant', content: draft.content, model: draft.model,
+      interactionId: draft.id, routeAction: draft.profile, ts: Date.now(),
+    }]);
+    // Record winner for routing optimization
+    const token = getToken();
+    fetch(`/v1/drafts/winner/${draft.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ profile: draft.profile }),
+    }).catch(() => {});
     setDraftMode(false);
     setDrafts([]);
   };
@@ -168,19 +248,48 @@ export function Chat() {
     <div class="chat-area">
       <div class="chat-header">
         <button onclick=${() => sidebarOpen.value = !sidebarOpen.value}>☰</button>
+        <div class="chat-title">${activeSessionId ? '🏰 Adventure' : '🏰 DMlog.ai'}</div>
         <div class="actions">
-          <button onclick=${() => setDraftMode(!draftMode)} title="Draft mode (Ctrl+D)">${draftMode ? '✕' : '🎯'} Draft</button>
-          <button onclick=${handleNewChat} title="New chat (Ctrl+N)">+ New</button>
-          <button onclick=${() => theme.value = theme.value === 'dark' ? 'light' : 'dark'}>${theme.value === 'dark' ? '☀️' : '🌙'}</button>
-          <button onclick=${() => { import('./settings.js').then(() => { /* settings imported via App */ }); settingsOpen.value = true; }}>⚙</button>
+          <button onclick=${() => setShowDice(!showDice)} title="Dice roller" class="icon-btn">🎲</button>
+          <button onclick=${() => setDraftMode(!draftMode)} title="Compare responses" class="icon-btn">${draftMode ? '✕' : '🎯'}</button>
+          <button onclick=${() => analyticsOpen.value = true} title="Analytics" class="icon-btn">📊</button>
+          <button onclick=${handleNewChat} title="New adventure" class="icon-btn">+ New</button>
+          <button onclick=${() => theme.value = theme.value === 'dark' ? 'light' : 'dark'} class="icon-btn">${theme.value === 'dark' ? '☀️' : '🌙'}</button>
+          <button onclick=${() => settingsOpen.value = true} class="icon-btn">⚙</button>
+          <button onclick=${handleLogout} title="Sign out" class="icon-btn">🚪</button>
         </div>
       </div>
-
+      <${CharacterStats} />
       ${draftMode && drafts.length > 0 ? html`
         <${DraftPanel} drafts=${drafts} onPick=${pickDraft} onClose=${() => setDraftMode(false)} />
       ` : html`
         <div class="message-list" ref=${listRef}>
-          ${messages.map((m, i) => html`<${Message} key=${i} message=${m} />`)}
+          ${loadingSession ? html`<div class="empty-state"><span class="spinner" style="font-size:1.5rem;width:24px;height:24px"></span><div class="empty-hint" style="margin-top:.75rem">Loading campaign...</div></div>` :
+            messages.length === 0 ? html`
+              <div class="empty-state">
+                <div class="empty-icon">🏰</div>
+                <div class="empty-title">Your adventure awaits.</div>
+                <div class="empty-hint">Describe what you want to do, or ask the DM to set the scene.</div>
+                <div class="empty-prompts">
+                  <button class="prompt-chip" onclick=${() => setInput('I walk into the nearest tavern')}>🚪 Walk into a tavern</button>
+                  <button class="prompt-chip" onclick=${() => setInput('I search for treasure in the ancient ruins')}>⛏️ Search for treasure</button>
+                  <button class="prompt-chip" onclick=${() => setInput('A dragon appears on the horizon!')}>🐉 Spot a dragon</button>
+                  <button class="prompt-chip" onclick=${() => setInput('Tell me about the world I am in')}>🗺️ Learn about this world</button>
+                </div>
+              </div>
+            ` :
+            messages.map((m, i) => html`<${Message} key=${i} message=${m} />`)
+          }
+          ${isStreaming && !streamingContent ? html`
+            <div class="message assistant">
+              <div class="message-bubble">
+                <div class="typing-indicator">
+                  <div class="typing-dots"><span></span><span></span><span></span></div>
+                  <span>DM is narrating...</span>
+                </div>
+              </div>
+            </div>
+          ` : null}
           ${isStreaming && streamingContent ? html`
             <div class="message assistant">
               <div class="message-bubble">
@@ -191,58 +300,18 @@ export function Chat() {
           ` : null}
         </div>
       `}
-
       <div class="input-area">
+        ${showDice && html`<div class="dice-roller-popup"><${DiceRoller} /></div>`}
         <div class="input-row">
-          <textarea
-            ref=${textareaRef}
-            placeholder="Type a message…"
-            value=${input}
-            onInput=${handleInput}
-            onKeyDown=${handleKeyDown}
-            disabled=${isStreaming}
-            rows="1"
-          />
-          <button class="primary" onclick=${() => draftMode ? sendDraft(input) : sendMessage(input)} disabled=${isStreaming || !input.trim()}>
+          <textarea ref=${textareaRef} placeholder="Type a message… (Enter to send)"
+            value=${input} onInput=${handleInput} onKeyDown=${handleKeyDown}
+            disabled=${isStreaming} rows="1" />
+          <button class="primary" onclick=${() => draftMode ? sendDraft(input) : sendMessage(input)}
+            disabled=${isStreaming || !input.trim()}>
             ${isStreaming ? html`<span class="spinner"></span>` : '➤'}
           </button>
         </div>
-        <div class="input-hint">Ctrl+Enter to send${draftMode ? ' • Draft mode active' : ''}</div>
       </div>
     </div>
   `;
-}
-
-// Basic markdown renderer
-export function MessageContent({ content }) {
-  if (!content) return html``;
-
-  // Split by code blocks first
-  const parts = content.split(/(```[\s\S]*?```)/g);
-  return html`<div>${parts.map(part => {
-    if (part.startsWith('```') && part.endsWith('```')) {
-      const lines = part.slice(3, -3);
-      const firstNewline = lines.indexOf('\n');
-      const lang = firstNewline > 0 ? lines.slice(0, firstNewline).trim() : '';
-      const code = firstNewline > 0 ? lines.slice(firstNewline + 1) : lines;
-      return html`<pre><code>${code}</code></pre>`;
-    }
-    // Inline markdown
-    return html`<span dangerouslySetInnerHTML=${{ __html: renderInlineMarkdown(part) }}></span>`;
-  })}</div>`;
-}
-
-function renderInlineMarkdown(text) {
-  let html = text
-    // Bold
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    // Line breaks
-    .replace(/\n/g, '<br>');
-  return html;
 }
