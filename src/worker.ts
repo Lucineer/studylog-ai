@@ -1,4 +1,5 @@
 import { evapPipeline, getEvapReport, getLockStats } from './lib/evaporation-pipeline.js';
+import { landingHtml, chapterHtml, type BrainProgress } from './lib/brain-lesson.js';
 import { selectModel } from './lib/model-router.js';
 import { trackConfidence, getConfidence } from './lib/confidence-tracker.js';
 import { softActualize, confidenceScore } from './lib/soft-actualize.js';
@@ -348,6 +349,32 @@ export default {
     if (cocapnMatch && method === 'GET') {
       const links = await cocapn.getLinks(cocapnMatch[1]);
       return json({ topic: cocapnMatch[1], links });
+    }
+
+    // ── Build Your Own Brain ────────────────────────────────────────
+    if (path === '/brain' && method === 'GET') {
+      return new Response(landingHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';" } });
+    }
+    const brainChMatch = path.match(/^\/brain\/chapter\/(\d+)$/);
+    if (brainChMatch && method === 'GET') {
+      const html = chapterHtml(parseInt(brainChMatch[1]));
+      if (!html) return notFound('Chapter not found');
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';" } });
+    }
+    if (path === '/brain/progress' && method === 'POST') {
+      const body = await request.json() as { sessionId: string; chapter: number; completed: boolean; taskOutput?: string };
+      const key = `brain-progress-${body.sessionId}`;
+      const existing = await env.STUDYLOG_KV?.get(key);
+      const progress: BrainProgress = existing ? JSON.parse(existing) : {};
+      progress[body.chapter] = { completed: body.completed, taskOutput: body.taskOutput, timestamp: new Date().toISOString() };
+      await env.STUDYLOG_KV?.put(key, JSON.stringify(progress));
+      return json({ ok: true, progress });
+    }
+    if (path === '/brain/progress' && method === 'GET') {
+      const sessionId = url.searchParams.get('sessionId');
+      if (!sessionId) return json({});
+      const raw = await env.STUDYLOG_KV?.get(`brain-progress-${sessionId}`);
+      return json(raw ? JSON.parse(raw) : {});
     }
 
     // ── 404 ────────────────────────────────────────────────────────────
