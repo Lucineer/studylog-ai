@@ -110,7 +110,14 @@ export default {
 
     // ── Static routes ──────────────────────────────────────────────────
     if (path === '/' || path === '/index.html') return landingPage();
-    if (path === '/setup') return setupPage();
+    if (path === '/api/efficiency' && request.method === 'GET') {
+    return new Response(JSON.stringify({
+      totalCached: 0, totalHits: 0, cacheHitRate: 0, tokensSaved: 0,
+      repo: 'studylog-ai', timestamp: Date.now()
+    }), { headers: { 'Content-Type': 'application/json', ...corsHeaders() } });
+  }
+
+  if (path === '/setup') return setupPage();
     if (path === '/health') return json({ status: 'ok', service: 'studylog-ai', version: '1.1.0', agentCount: 5, modules: ['tutor','quiz-master','classmate','director','socratic','sm2','profiles','repo-agent','seed'], seedVersion: '2024.04', timestamp: Date.now() });
 
 
