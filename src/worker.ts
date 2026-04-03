@@ -199,13 +199,13 @@ export default {
 
       // Call LLM via BYOK
       const userMessage = messages.map((m: any) => m.content || '').join(' ');
-      const result = await evapPipeline(env, userMessage, async () => {
+      const evapResult = await evapPipeline(env, userMessage, async () => {
         const llmResponse = await callLLM(byokConfig, messages);
         if (!llmResponse.ok) throw new Error('LLM call failed');
         const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
         return llmData.choices?.[0]?.message?.content || 'No response generated.';
       }, 'studylog-ai');
-      const reply = result.response;
+      const reply = evapResult.response;
 
       // Update state
       state.turnHistory.push({ agentId: decision.agentId });
