@@ -13,6 +13,8 @@ import { ALL_AGENTS, type AgentDef } from './agents/agents.js';
 import { StudySession, type StudySessionConfig } from './study/tracker.js';
 import { SocraticMethod } from './study/tutor.js';
 import { callLLM, loadBYOKConfig, saveBYOKConfig, type BYOKConfig, type LLMMessage, BUILTIN_PROVIDERS } from './lib/byok.js';
+import { evapPipeline } from './lib/evaporation-pipeline.js';
+
 import { createProfile, getProfile, updateProfile, listProfiles, deleteProfile, getModelForRole, type StudentProfile } from './lib/multi-profile.js';
 import { RepoAgent, type RepoAgentAction } from './lib/repo-agent.js';
 import { CrossCocapn } from './lib/cross-cocapn.js';
@@ -197,12 +199,13 @@ export default {
 
       // Call LLM via BYOK
       const userMessage = messages.map((m: any) => m.content || '').join(' ');
-      const cached = await deadbandCheck(env, userMessage);
-      let llmResponse;
-      if (cached) { llmResponse = cached; } else { llmResponse = await callLLM(byokConfig, messages); await deadbandStore(env, userMessage, llmResponse); }
-      if (!llmResponse.ok) return json({ error: 'LLM call failed', status: llmResponse.status }, 502);
-      const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
-      const reply = llmData.choices?.[0]?.message?.content || 'No response generated.';
+      const result = await evapPipeline(env, userMessage, async () => {
+        const llmResponse = await callLLM(byokConfig, messages);
+        if (!llmResponse.ok) throw new Error('LLM call failed');
+        const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
+        return llmData.choices?.[0]?.message?.content || 'No response generated.';
+      }, 'studylog-ai');
+      const reply = result.response;
 
       // Update state
       state.turnHistory.push({ agentId: decision.agentId });
