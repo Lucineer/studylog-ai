@@ -1,3 +1,5 @@
+import { selectModel } from './lib/model-router.js';
+import { trackConfidence, getConfidence } from './lib/confidence-tracker.js';
 import { softActualize, confidenceScore } from './lib/soft-actualize.js';
 // ═══════════════════════════════════════════════════════════════════
 // StudyLog.ai — The Living Classroom
@@ -94,6 +96,10 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
+    if (path === '/api/confidence') {
+      const scores = await getConfidence(env);
+      return json(scores);
+    }
     // CORS preflight
     if (method === 'OPTIONS') {
       return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Profile-Id' } });
@@ -189,7 +195,10 @@ export default {
       ];
 
       // Call LLM via BYOK
-      const llmResponse = await callLLM(byokConfig, messages);
+      const userMessage = messages.map((m: any) => m.content || '').join(' ');
+      const cached = await deadbandCheck(env, userMessage);
+      let llmResponse;
+      if (cached) { llmResponse = cached; } else { llmResponse = await callLLM(byokConfig, messages); await deadbandStore(env, userMessage, llmResponse); }
       if (!llmResponse.ok) return json({ error: 'LLM call failed', status: llmResponse.status }, 502);
       const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
       const reply = llmData.choices?.[0]?.message?.content || 'No response generated.';
