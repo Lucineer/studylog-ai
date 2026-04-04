@@ -183,6 +183,22 @@ export default {
     }
 
     // ── Chat (main endpoint) ───────────────────────────────────────────
+
+    // ── Crystallized Knowledge Lookup (pre-chat cache check) ──
+    if (url.pathname === '/api/crystal/lookup' && method === 'POST') {
+      const body = await request.json();
+      const query = body.query || '';
+      try {
+        const r = await fetch('https://fleet-orchestrator.casey-digennaro.workers.dev/api/crystal/query', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, domain: 'studylog-ai' }),
+        });
+        const result = await r.json();
+        return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      } catch(e) {
+        return new Response(JSON.stringify({ cachedHits: [], needModelCall: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
     if (path === '/api/chat' && method === 'POST') {
       const result = await getOrCreateProfile(request, env);
       if (result instanceof Response) return result;
