@@ -1,8 +1,9 @@
 name = "studylog-ai"
+account_id = "049ff5e84ecf636b53b162cbb580aae6"
 main = "src/worker.ts"
 compatibility_date = "2025-03-01"
 compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
 binding = "STUDYLOG_KV"
-id = "982320c4390f411c89f44ba2e539b44a"
+id = "4c2baf54af4c4c5d8c8ca8686e89e2e4"
