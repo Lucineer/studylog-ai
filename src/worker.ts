@@ -22,6 +22,44 @@ import { CrossCocapn } from './lib/cross-cocapn.js';
 import { deadbandCheck, deadbandStore, getEfficiencyStats } from './lib/deadband.js';
 import { logResponse } from './lib/response-logger.js';
 
+// ── Inline Crystal Graph ─────────────────────────────────────────────
+// Crystallization Principle: insights solidify fluid→solid→gas→metastatic
+// Inline here to avoid unreliable worker-to-worker fetch.
+
+interface CrystalNode { insight: string; source: string; uses: number; state: string; quality: number; }
+
+async function crystalAdd(kv: KVNamespace, insight: string, source: string, quality = 0.5): Promise<void> {
+  const key = 'crystal:' + crypto.subtle.digestSync('SHA-256', new TextEncoder().encode(insight)).then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''));
+  // Actually use sync hash approach
+  const id = 'cr:' + simpleHash(insight);
+  const existing = await kv.get(id);
+  if (existing) { const node = JSON.parse(existing); node.uses++; node.quality = Math.min(1, node.quality + 0.05); await kv.put(id, JSON.stringify(node)); }
+  else { await kv.put(id, JSON.stringify({ insight, source, uses: 1, state: 'fluid', quality })); }
+}
+
+async function crystalQuery(kv: KVNamespace, input: string): Promise<{ needsModel: boolean; hits: CrystalNode[] }> {
+  const list = await kv.list({ prefix: 'cr:' });
+  const words = input.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const hits: CrystalNode[] = [];
+  for (const key of list.keys.slice(-50)) { // check last 50 crystals
+    try {
+      const node: CrystalNode = JSON.parse(await kv.get(key.name) || '{}');
+      const insightLow = node.insight.toLowerCase();
+      let matches = 0;
+      for (const w of words) { if (insightLow.includes(w)) matches++; }
+      const score = words.length > 0 ? matches / words.length * (node.quality + 0.5) : 0;
+      if (score > 0.2) hits.push(node);
+    } catch {}
+  }
+  hits.sort((a, b) => b.quality - a.quality);
+  return { needsModel: hits.length === 0 || hits[0].quality < 0.6, hits: hits.slice(0, 3) };
+}
+
+function simpleHash(s: string): string {
+  let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+  return Math.abs(h).toString(36);
+}
+
 // ── Instances ──────────────────────────────────────────────────────────────
 
 const repoAgent = new RepoAgent();
@@ -239,13 +277,31 @@ export default {
 
       // Call LLM via BYOK
       const userMessage = messages.map((m: any) => m.content || '').join(' ');
-      const evapResult = await evapPipeline(env, userMessage, async () => {
-        const llmResponse = await callLLM(byokConfig, messages);
-        if (!llmResponse.ok) throw new Error('LLM call failed');
-        const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
-        return llmData.choices?.[0]?.message?.content || 'No response generated.';
-      }, 'studylog-ai');
-      const reply = evapResult.response;
+
+      // Crystal cache check — skip LLM if we have a strong crystallized insight
+      let reply: string | undefined;
+      if (env.STUDYLOG_KV) {
+        const crystal = await crystalQuery(env.STUDYLOG_KV, userMessage);
+        if (!crystal.needsModel && crystal.hits.length > 0) {
+          reply = 'Based on what we have covered: ' + crystal.hits[0].insight + '\n\nCan you build on this, or would you like to explore a different angle?';
+        }
+      }
+
+      if (!reply) {
+        const evapResult = await evapPipeline(env, userMessage, async () => {
+          const llmResponse = await callLLM(byokConfig, messages);
+          if (!llmResponse.ok) throw new Error('LLM call failed');
+          const llmData = await llmResponse.json() as { choices?: Array<{ message?: { content: string } }> };
+          return llmData.choices?.[0]?.message?.content || 'No response generated.';
+        }, 'studylog-ai');
+        reply = evapResult.response;
+
+        // Store reply as new crystal insight
+        if (env.STUDYLOG_KV && reply.length > 50) {
+          const summary = reply.slice(0, 200).trim();
+          await crystalAdd(env.STUDYLOG_KV, summary, 'chat-response', 0.5);
+        }
+      }
 
       // Update state
       state.turnHistory.push({ agentId: decision.agentId });
