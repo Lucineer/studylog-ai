@@ -308,6 +308,12 @@ export default {
       state.lastSpeaker = decision.agentId;
       if (decision.phaseTransition) state.phase = decision.phaseTransition.to;
 
+      // Emit fleet event (fire-and-forget)
+      fetch('https://fleet-orchestrator.casey-digennaro.workers.dev/api/events', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'chat', vesselId: 'studylog-ai', data: { phase: state.phase, agent: decision.agentId, turn: state.turnHistory.length } }),
+      }).catch(() => {});
+
       // Update knowledge graph
       profile.knowledgeGraph[body.message.slice(0, 50)] = Math.min(1, (profile.knowledgeGraph[body.message.slice(0, 50)] || 0) + 0.05);
       await updateProfile(profile.id, { knowledgeGraph: profile.knowledgeGraph });
