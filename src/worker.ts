@@ -174,6 +174,7 @@ export default {
 
   if (path === '/setup') return setupPage();
     if (path === '/health') return json({ status: 'ok', service: 'studylog-ai', version: '1.1.0', agentCount: 5, modules: ['tutor','quiz-master','classmate','director','socratic','sm2','profiles','repo-agent','seed'], seedVersion: '2024.04', timestamp: Date.now() });
+    if (path === '/vessel.json') { try { const vj = await import('./vessel.json', { with: { type: 'json' } }); return json(vj.default || vj); } catch { return json({}); } }
 
 
     // ── Seed Route ───────────────────────────────────────────────────────
