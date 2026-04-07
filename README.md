@@ -1,72 +1,45 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Lucineer/capitaine/master/docs/capitaine-logo.jpg" alt="Capitaine" width="120">
-</p>
+# studylog-ai
+Helps you retain what you learn. This tutor attempts to track where you struggle and prompts you to review it later. You run the instance, so all your data stays with you.
 
-<h1 align="center">studylog-ai</h1>
+📝 **Live Demo:** [studylog-ai](https://studylog-ai.casey-digennaro.workers.dev)
 
-<p align="center">An AI tutor that maintains a memory of your learning sessions.</p>
+## Why This Exists
+AI tutors often lose context after a few messages, forcing you to repeatedly re-explain your knowledge gaps. This project is an attempt to provide a simple, self-hosted alternative with persistent memory.
 
-<p align="center">
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#limitations">Limitations</a> ·
-  <a href="https://github.com/Lucineer/studylog-ai/issues">Issues</a>
-</p>
-
----
-
-Most AI tutors treat each conversation as a fresh start. This one persists between sessions, remembering your past questions, strengths, and weak points. It's designed for learning that happens across multiple days and contexts.
-
-You run it yourself. Fork this repository and deploy it to your own Cloudflare account. You own all the data.
-
----
-
-### How It Works
-This is an agent built with the Cocapn fleet. It runs in a single Cloudflare Worker.
-- It stores your conversation history and learning state in a durable object, accessible when you return.
-- It structures lessons and generates scannable study slides.
-- It schedules periodic review questions based on a simple forgetting curve.
-
-It is a standard fleet vessel. You can modify its behavior by editing the source.
-
-**Live Demo:** [studylog-ai](https://studylog-ai.casey-digennaro.workers.dev) · **Built with:** [Capitaine](https://github.com/Lucineer/capitaine) · [Cocapn](https://cocapn.ai)
-
----
+## What Makes This Different
+1.  **Stateful Sessions**: It uses a scoring system to track concepts you've marked as difficult and may ask about them in future sessions.
+2.  **You Own It**: Fork this repository and deploy it yourself. All conversation data and memory are stored in your own Cloudflare account.
+3.  **One File, Zero Dependencies**: The core logic is a single Cloudflare Worker file. There is no external database or complex infrastructure to manage.
 
 ## Quick Start
-1.  Fork this repository.
-2.  Clone your fork and install dependencies:
+This is fork-first. You will own and operate your copy.
+1.  **Fork** this repository to your GitHub account.
+2.  **Clone & Deploy** to Cloudflare Workers:
     ```bash
     git clone https://github.com/your-username/studylog-ai.git
     cd studylog-ai
-    npm install
     npx wrangler login
-    ```
-3.  Set your API key as a secret:
-    ```bash
-    npx wrangler secret put DEEPSEEK_API_KEY
-    ```
-4.  Deploy:
-    ```bash
+    npx wrangler secret put DEEPSEEK_API_KEY # Your API key
     npx wrangler deploy
     ```
+3.  **Customize** the agent's behavior by editing the source `src/index.js` directly.
 
-Your private AI tutor will be running at your assigned `*.workers.dev` subdomain.
+## How It Works
+A single Cloudflare Worker uses a Durable Object as persistent storage for your learning history. A lightweight director function decides, based on simple rules and spaced repetition scheduling, whether to present new material, quiz you, or initiate a review.
 
 ## Features
-*   **Session Memory**: Maintains state between visits using Cloudflare Durable Objects.
-*   **Structured Output**: Generates annotated slides instead of walls of text.
-*   **Adaptive Review**: Schedules review questions based on a basic forgetting curve.
-*   **Self-Hosted**: Your data remains in your Cloudflare account.
+*   **Persistent Memory**: Stores your lesson history, self-reported confidence scores, and scheduled reviews in a Cloudflare Durable Object.
+*   **Structured Lessons**: Attempts to break topics into discrete slides with key takeaways.
+*   **Adaptive Review**: Schedules practice using a basic SM2 spaced repetition algorithm.
+*   **Multi‑Profile Support**: Creates isolated memory contexts for different subjects or users via URL paths.
+*   **Confidence Tracking**: Logs your self-assessed certainty to help prioritize review.
+*   **Cross‑Fleet Calls**: Can request information from other agents in the Cocapn Fleet.
+*   **BYOK LLMs**: Configure your own API keys for supported LLM providers.
 
 ## Limitations
-This is an early implementation. The review scheduler is a basic heuristic and may not be as precise as dedicated spaced repetition software. The agent's curriculum-building logic is currently focused on conversational, open-ended learning rather than a strict, predefined syllabus.
+The spaced repetition system uses a fixed, unconfigurable implementation of the SM2 algorithm. You cannot adjust review intervals or parameters without modifying the source code.
 
----
+## License
+MIT License. Use, modify, and distribute it freely.
 
-<div align="center">
-  <a href="https://the-fleet.casey-digennaro.workers.dev">The Fleet</a> ·
-  <a href="https://cocapn.ai">Cocapn</a>
-</div>
-
-*Attribution: Superinstance & Lucineer (DiGennaro et al.)*
+<div style="text-align:center;padding:16px;color:#64748b;font-size:.8rem"><a href="https://the-fleet.casey-digennaro.workers.dev" style="color:#64748b">The Fleet</a> &middot; <a href="https://cocapn.ai" style="color:#64748b">Cocapn</a></div>
