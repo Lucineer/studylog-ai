@@ -444,13 +444,13 @@ export default {
 
     // ── Build Your Own Brain ────────────────────────────────────────
     if (path === '/brain' && method === 'GET') {
-      return new Response(landingHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';" } });
+      return new Response(landingHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none';" } });
     }
     const brainChMatch = path.match(/^\/brain\/chapter\/(\d+)$/);
     if (brainChMatch && method === 'GET') {
       const html = chapterHtml(parseInt(brainChMatch[1]));
       if (!html) return notFound('Chapter not found');
-      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self';" } });
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none';" } });
     }
     if (path === '/brain/progress' && method === 'POST') {
       const body = await request.json() as { sessionId: string; chapter: number; completed: boolean; taskOutput?: string };
