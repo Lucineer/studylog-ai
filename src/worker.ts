@@ -75,6 +75,7 @@ function landingPage(): Response {
 cd studylog-ai
 npm install
 npx wrangler deploy</code></div></div><div class="footer">StudyLog.ai — Part of the LogOS ecosystem. BYOK, open source.</div><div style="text-align:center;padding:24px;color:#475569;font-size:.75rem"><a href="https://the-fleet.casey-digennaro.workers.dev" style="color:#64748b">⚓ The Fleet</a> · <a href="https://cocapn.ai" style="color:#64748b">Cocapn</a></div></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://api.siliconflow.cn https://api.deepseek.com https://api.groq.com https://api.mistral.ai https://openrouter.ai https://api.z.ai https://*;" } });
+'X-Frame-Options': 'DENY',
 }
 
 function setupPage(): Response {
