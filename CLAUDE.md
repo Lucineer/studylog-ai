@@ -1,27 +1,96 @@
-# StudyLog.ai — The Living Classroom
+# CLAUDE.md — Studylog Ai
 
-Multi-agent AI tutoring platform on Cloudflare Workers.
+You are the specialist and shipwright for this vessel. Two roles, one agent.
 
-## Architecture
-- **src/worker.ts** — Main worker, all routes
-- **src/study/** — Core study modules (SM-2, Socratic, director, tracker, session-state)
-- **src/agents/** — Agent definitions (teacher, classmate, quiz master, tutor, progress tracker)
-- **src/lib/** — BYOK multi-provider, multi-profile, repo-agent, cross-cocapn
+## Identity
+- **Vessel**: Studylog Ai
+- **Role**: StudyLog.ai
+- **URL**: https://studylog-ai.casey-digennaro.workers.dev
+- **Repo**: github.com/Lucineer/studylog-ai
+- **Branch**: master
+- **KV Namespace**: unknown
+- **Size**: ~474 lines
 
-## Key Features
-- BYOK: Bring your own API key (OpenAI, Anthropic, Google, DeepSeek, Groq, Ollama)
-- Multi-agent routing via director.ts (rule-based phase/content routing)
-- SM-2 spaced repetition for flashcards
-- Socratic method teaching
-- Per-profile provider configs and model routing
-- Repo-agent hooks (fork, theme, component, build, ship)
-- Cross-cocapn topic linking across platforms
+## Specialist Mode — Day-to-Day Operations
 
-## Deploy
+### Deploy
 ```bash
-npm install
-npx wrangler deploy
+cd /tmp/studylog-ai && wrangler deploy
 ```
 
-## Author
-Superinstance
+### Health Check
+```bash
+curl -s https://studylog-ai.casey-digennaro.workers.dev/health
+curl -s https://studylog-ai.casey-digennaro.workers.dev/vessel.json | python3 -m json.tool
+```
+
+### Key Endpoints
+| Endpoint | What It Does |
+|----------|-------------|
+| /health | Liveness check |
+| /vessel.json | Fleet self-description |
+| /api/crystal/lookup | API endpoint |
+
+### Common Issues & Recovery
+1. **502 error**: Check KV namespace `unknown`, redeploy with `rm -rf .wrangler dist && wrangler deploy`
+2. **CSP blocking**: CSP pattern is `inline string in Response` — ensure connect-src includes needed domains
+3. **Stale build**: `rm -rf .wrangler dist && wrangler deploy`
+4. **GitHub raw cache**: Changes may take 5-10 min to propagate on raw.githubusercontent.com
+5. **Git push conflict**: `git fetch && git reset --hard origin/master && re-apply changes`
+
+### Fleet Connections
+- **Emergence bus**: not wired
+- **Vessel Tuner**: https://vessel-tuner.casey-digennaro.workers.dev/api/vessel?name=studylog-ai
+- **Fleet grid**: Listed in cocapn.ai and the-fleet
+
+## Shipwright Mode — Drydock Operations
+
+### Architecture Pattern
+- **Type**: Raw CF Worker
+- **JSON helper**: json()
+- **CSP pattern**: inline string in Response
+- **Features.js**: no
+
+### Fleet Patterns
+- **Frame-ancestors in CSP**: yes
+- **vessel.json capabilities**: chat, sessions, quizzes, slides
+- **Fleet link footer**: yes
+
+### Refactoring Rules
+1. **NEVER** change the JSON helper function name (`json()`) — breaks all endpoints
+2. **NEVER** add template literals (${var}) inside HTML strings — breaks esbuild
+3. **NEVER** use single quotes inside double-quoted HTML inside single-quoted TS strings
+4. **ALWAYS** use string concatenation for HTML, not template literals
+5. **ALWAYS** test with `curl /health` after every change
+6. **ALWAYS** check vessel-tuner score before and after refactoring
+7. **PREFER** `/features.js` endpoint for complex client-side JS (avoids quote escaping)
+8. **PREFER** `write` tool over heredocs — obfuscation detector blocks cat << EOF
+
+### Before Refactoring Checklist
+- [ ] Current vessel-tuner score recorded
+- [ ] Git status clean (no uncommitted changes)
+- [ ] Branch backed up (`git tag before-refactor`)
+- [ ] All endpoints tested and working
+- [ ] Fleet connections documented
+
+### After Refactoring Checklist
+- [ ] `curl /health` returns 200
+- [ ] `curl /vessel.json` returns valid JSON with capabilities
+- [ ] CSP header present with frame-ancestors
+- [ ] Vessel-tuner score >= previous score
+- [ ] Landing page renders correctly
+- [ ] `git push` succeeds
+
+## Captain's Standing Orders
+1. Keep the vessel small. ~474 lines is the current size.
+2. Zero runtime dependencies unless absolutely necessary.
+3. Every endpoint must be useful — no dead code.
+4. Equipment is loaded inline, never via npm.
+5. All changes committed with descriptive messages.
+6. If something breaks, fix it before moving on.
+7. Document what you changed and why.
+
+## Vessel Evolution
+- **Current stage**: [hardware-first | safe | effective | pretty | optimized]
+- **Target stage**: optimized
+- **Rollback points**: check git log for last-known-good commits
